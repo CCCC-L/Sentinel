@@ -10,7 +10,6 @@ import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
 import com.alibaba.csp.sentinel.slots.block.flow.param.ParamFlowRule;
 import com.alibaba.csp.sentinel.slots.system.SystemRule;
 
-import java.lang.reflect.Method;
 import java.util.Arrays;
 
 /**
@@ -73,12 +72,16 @@ public enum RuleType {
         return (Class<T>) ruleClazz;
     }
 
-    public Method getFromMethod() {
-        return Arrays.stream(this.getEntityClazz().getMethods())
-                .filter(m -> m.getName().startsWith("from") && m.getName().endsWith("Rule") && m.getReturnType() == this.getEntityClazz())
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("未在" + this.getEntityClazz().getName() + " 中找到from..Rule方法"));
+    public Object fromRule(String app, String ip, int port, Object r) {
+        try {
+            return Arrays.stream(this.getEntityClazz().getMethods())
+                    .filter(m -> m.getName().startsWith("from") && m.getName().endsWith("Rule") && m.getReturnType() == this.getEntityClazz())
+                    .findFirst()
+                    .orElseThrow(() -> new RuntimeException("未在" + this.getEntityClazz().getName() + " 中找到from..Rule方法"))
+                    .invoke(null, app, ip, port, r);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
-
 
 }

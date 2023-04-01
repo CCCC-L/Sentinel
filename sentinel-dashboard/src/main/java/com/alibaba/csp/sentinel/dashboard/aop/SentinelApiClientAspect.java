@@ -233,26 +233,16 @@ public class SentinelApiClientAspect {
 
         try {
             Object rules;
-            switch (ruleType) {
-                case GW_API_GROUP:
-                    List<ApiDefinitionEntity> gwApiRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getEntityClazz());
-                    rules = gwApiRules.stream().peek(rule -> {
-                        rule.setApp(app);
-                        rule.setIp(ip);
-                        rule.setPort(port);
-                    }).collect(Collectors.toList());
-                    break;
-                default:
-                    List defaultRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getRuleClazz());
-
-                    rules = defaultRules.stream().map(r -> {
-                        try {
-                            return ruleType.getFromMethod().invoke(null, app, ip, port, r);
-                        } catch (Exception e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).collect(Collectors.toList());
-                    break;
+            if (ruleType == RuleType.GW_API_GROUP) {
+                List<ApiDefinitionEntity> gwApiRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getEntityClazz());
+                rules = gwApiRules.stream().peek(rule -> {
+                    rule.setApp(app);
+                    rule.setIp(ip);
+                    rule.setPort(port);
+                }).collect(Collectors.toList());
+            } else {
+                List defaultRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getRuleClazz());
+                rules = defaultRules.stream().map(r -> ruleType.fromRule(app, ip, port, r)).collect(Collectors.toList());
             }
 
             return rules;
@@ -275,12 +265,6 @@ public class SentinelApiClientAspect {
 
         try {
             switch (ruleType) {
-                case FLOW:
-                case DEGRADE:
-                case SYSTEM:
-                case AUTHORITY:
-                    rules = (List) rules.stream().map(rule -> ((RuleEntity) rule).toRule()).collect(Collectors.toList());
-                    break;
                 case PARAM_FLOW:
                     rules = (List) rules.stream().map(rule -> ((AbstractRuleEntity) rule).getRule()).collect(Collectors.toList());
                     break;
@@ -291,6 +275,7 @@ public class SentinelApiClientAspect {
                     rules = (List) rules.stream().map(rule -> ((GatewayFlowRuleEntity) rule).toGatewayFlowRule()).collect(Collectors.toList());
                     break;
                 default:
+                    rules = (List) rules.stream().map(rule -> ((RuleEntity) rule).toRule()).collect(Collectors.toList());
                     break;
             }
 
