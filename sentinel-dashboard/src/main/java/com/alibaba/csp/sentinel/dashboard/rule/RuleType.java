@@ -10,7 +10,10 @@ import com.alibaba.csp.sentinel.slots.block.flow.FlowRule;
 import com.alibaba.csp.sentinel.slots.block.flow.param.ParamFlowRule;
 import com.alibaba.csp.sentinel.slots.system.SystemRule;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author Cong
@@ -72,16 +75,21 @@ public enum RuleType {
         return (Class<T>) ruleClazz;
     }
 
-    public Object fromRule(String app, String ip, int port, Object r) {
-        try {
-            return Arrays.stream(this.getEntityClazz().getMethods())
-                    .filter(m -> m.getName().startsWith("from") && m.getName().endsWith("Rule") && m.getReturnType() == this.getEntityClazz())
-                    .findFirst()
-                    .orElseThrow(() -> new RuntimeException("未在" + this.getEntityClazz().getName() + " 中找到from..Rule方法"))
-                    .invoke(null, app, ip, port, r);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+    public Object toRuleEntity(String app, String ip, int port, List rules) {
+        // 获取from..Rule 方法
+        Method method = Arrays.stream(this.getEntityClazz().getMethods())
+                .filter(m -> m.getName().startsWith("from") && m.getName().endsWith("Rule") && m.getReturnType() == this.getEntityClazz())
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("未在" + this.getEntityClazz().getName() + " 中找到from..Rule方法"));
+
+        return rules.stream().map(r -> {
+            try {
+                return method.invoke(app, ip, port, r);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }).collect(Collectors.toList());
     }
+
 
 }

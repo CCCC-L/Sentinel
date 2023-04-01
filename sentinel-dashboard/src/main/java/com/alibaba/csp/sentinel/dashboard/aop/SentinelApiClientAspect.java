@@ -242,7 +242,7 @@ public class SentinelApiClientAspect {
                 }).collect(Collectors.toList());
             } else {
                 List defaultRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getRuleClazz());
-                rules = defaultRules.stream().map(r -> ruleType.fromRule(app, ip, port, r)).collect(Collectors.toList());
+                rules = ruleType.toRuleEntity(app, ip, port, defaultRules);
             }
 
             return rules;
