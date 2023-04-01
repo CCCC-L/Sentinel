@@ -84,7 +84,7 @@ public enum RuleType {
 
         return rules.stream().map(r -> {
             try {
-                return method.invoke(app, ip, port, r);
+                return method.invoke(null, app, ip, port, r);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
