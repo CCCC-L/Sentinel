@@ -1,16 +1,12 @@
 package com.alibaba.csp.sentinel.dashboard.aop;
 
-import com.alibaba.csp.sentinel.adapter.gateway.common.rule.GatewayFlowRule;
 import com.alibaba.csp.sentinel.concurrent.NamedThreadFactory;
+import com.alibaba.csp.sentinel.dashboard.client.SentinelApiNacosClient;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.gateway.ApiDefinitionEntity;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.gateway.GatewayFlowRuleEntity;
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.AbstractRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.AuthorityRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.ParamFlowRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.client.SentinelApiNacosClient;
+import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.RuleEntity;
 import com.alibaba.csp.sentinel.dashboard.rule.RuleType;
-import com.alibaba.csp.sentinel.slots.block.authority.AuthorityRule;
-import com.alibaba.csp.sentinel.slots.block.flow.param.ParamFlowRule;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -223,11 +219,13 @@ public class SentinelApiClientAspect {
         return publishRules(pjp, RuleType.GW_FLOW);
     }
 
-
     private CompletableFuture<Object> fetchRulesWithCompletableFuture(ProceedingJoinPoint pjp, RuleType ruleType) {
         return CompletableFuture.supplyAsync(() -> fetchRules(pjp, ruleType), EXECUTOR);
     }
 
+    /**
+     * 从Nacos中读取数据
+     */
     private Object fetchRules(ProceedingJoinPoint pjp, RuleType ruleType) {
         String app = (String) pjp.getArgs()[0];
         String ip = (String) pjp.getArgs()[1];
@@ -236,31 +234,25 @@ public class SentinelApiClientAspect {
         try {
             Object rules;
             switch (ruleType) {
-                // 热点规则
-                case PARAM_FLOW:
-                    List<ParamFlowRule> paramRules = nacosClient.getRules(app, ruleType.getName(), ParamFlowRule.class);
-                    rules = paramRules.stream().map(r -> ParamFlowRuleEntity.fromParamFlowRule(app, ip, port, r)).collect(Collectors.toList());
-                    break;
-                // 授权
-                case AUTHORITY:
-                    List<AuthorityRule> authorityRules = nacosClient.getRules(app, ruleType.getName(), AuthorityRule.class);
-                    rules = authorityRules.stream().map(r -> AuthorityRuleEntity.fromAuthorityRule(app, ip, port, r)).collect(Collectors.toList());
-                    break;
-                // 网关API
                 case GW_API_GROUP:
-                    List<ApiDefinitionEntity> gwApiRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getClazz());
+                    List<ApiDefinitionEntity> gwApiRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getEntityClazz());
                     rules = gwApiRules.stream().peek(rule -> {
                         rule.setApp(app);
                         rule.setIp(ip);
                         rule.setPort(port);
                     }).collect(Collectors.toList());
                     break;
-                case GW_FLOW:
-                    List<GatewayFlowRule> GatewayFlowRules = nacosClient.getRules(app, ruleType.getName(), GatewayFlowRule.class);
-                    rules = GatewayFlowRules.stream().map(r -> GatewayFlowRuleEntity.fromGatewayFlowRule(app, ip, port, r)).collect(Collectors.toList());
-                    break;
                 default:
-                    rules = nacosClient.getRules(app, ruleType.getName(), ruleType.getClazz());
+                    List defaultRules = nacosClient.getRules(app, ruleType.getName(), ruleType.getRuleClazz());
+
+                    rules = defaultRules.stream().map(r -> {
+                        try {
+                            return ruleType.getFromMethod().invoke(null, app, ip, port, r);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    }).collect(Collectors.toList());
+                    break;
             }
 
             return rules;
@@ -274,13 +266,21 @@ public class SentinelApiClientAspect {
         return CompletableFuture.runAsync(() -> publishRules(pjp, ruleType), EXECUTOR);
     }
 
+    /**
+     * 将规则写到Nacos
+     */
     private boolean publishRules(ProceedingJoinPoint pjp, RuleType ruleType) {
         String app = (String) pjp.getArgs()[0];
         List rules = (List) pjp.getArgs()[3];
 
         try {
             switch (ruleType) {
+                case FLOW:
+                case DEGRADE:
+                case SYSTEM:
                 case AUTHORITY:
+                    rules = (List) rules.stream().map(rule -> ((RuleEntity) rule).toRule()).collect(Collectors.toList());
+                    break;
                 case PARAM_FLOW:
                     rules = (List) rules.stream().map(rule -> ((AbstractRuleEntity) rule).getRule()).collect(Collectors.toList());
                     break;
